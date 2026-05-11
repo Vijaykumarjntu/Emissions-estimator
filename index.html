@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Scope 3 Emissions Estimator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50">
+    <div class="max-w-4xl mx-auto p-6">
+        <h1 class="text-3xl font-bold mb-2">🌍 Scope 3 Emissions Estimator</h1>
+        <p class="text-gray-600 mb-6">Estimate supply chain emissions using public emissions factors</p>
+        
+        <div class="bg-white rounded-lg shadow p-6 mb-6">
+            <h2 class="text-xl font-semibold mb-4">Materials</h2>
+            <div id="materials-list" class="space-y-3 mb-4"></div>
+            <button onclick="addMaterial()" class="text-blue-600 hover:text-blue-800">+ Add material</button>
+        </div>
+        
+        <button onclick="calculateEmissions()" class="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700">Calculate Emissions →</button>
+        
+        <div id="results" class="mt-8 hidden"></div>
+        
+        <div class="mt-8 text-sm text-gray-500">
+            <p>Available materials: steel, aluminum, concrete, cement, copper, plastic_pet, plastic_pp, paper, cardboard, glass, lithium_ion_battery, diesel, gasoline, electricity, natural_gas</p>
+        </div>
+    </div>
+    
+    <script>
+        let materialCount = 0;
+        
+        function addMaterial(materialName = 'steel', quantity = '') {
+            const container = document.getElementById('materials-list');
+            const div = document.createElement('div');
+            div.className = 'flex gap-3 items-center';
+            div.innerHTML = `
+                <select class="border rounded p-2 flex-1" data-material>
+                    <option value="steel" ${materialName === 'steel' ? 'selected' : ''}>Steel</option>
+                    <option value="aluminum" ${materialName === 'aluminum' ? 'selected' : ''}>Aluminum</option>
+                    <option value="concrete" ${materialName === 'concrete' ? 'selected' : ''}>Concrete</option>
+                    <option value="cement" ${materialName === 'cement' ? 'selected' : ''}>Cement</option>
+                    <option value="copper" ${materialName === 'copper' ? 'selected' : ''}>Copper</option>
+                    <option value="plastic_pet" ${materialName === 'plastic_pet' ? 'selected' : ''}>Plastic (PET)</option>
+                    <option value="plastic_pp" ${materialName === 'plastic_pp' ? 'selected' : ''}>Plastic (PP)</option>
+                    <option value="paper" ${materialName === 'paper' ? 'selected' : ''}>Paper</option>
+                    <option value="cardboard" ${materialName === 'cardboard' ? 'selected' : ''}>Cardboard</option>
+                    <option value="glass" ${materialName === 'glass' ? 'selected' : ''}>Glass</option>
+                    <option value="lithium_ion_battery" ${materialName === 'lithium_ion_battery' ? 'selected' : ''}>Lithium-ion Battery</option>
+                    <option value="diesel" ${materialName === 'diesel' ? 'selected' : ''}>Diesel</option>
+                    <option value="gasoline" ${materialName === 'gasoline' ? 'selected' : ''}>Gasoline</option>
+                    <option value="electricity" ${materialName === 'electricity' ? 'selected' : ''}>Electricity</option>
+                    <option value="natural_gas" ${materialName === 'natural_gas' ? 'selected' : ''}>Natural Gas</option>
+                </select>
+                <input type="number" value="${quantity}" placeholder="Quantity" class="border rounded p-2 flex-1" data-quantity>
+                <select class="border rounded p-2 w-24" data-unit>
+                    <option value="kg">kg</option>
+                    <option value="tons">tons</option>
+                    <option value="kwh">kWh</option>
+                    <option value="liter">liter</option>
+                </select>
+                <button onclick="this.parentElement.remove()" class="text-red-500">×</button>
+            `;
+            container.appendChild(div);
+            materialCount++;
+        }
+        
+        async function calculateEmissions() {
+            const materials = [];
+            document.querySelectorAll('[data-material]').forEach((select, i) => {
+                const material = select.value;
+                const quantityInput = select.parentElement.querySelector('[data-quantity]');
+                const unitSelect = select.parentElement.querySelector('[data-unit]');
+                let quantity = parseFloat(quantityInput.value);
+                
+                // Convert tons to kg if needed
+                if (unitSelect.value === 'tons') quantity = quantity * 1000;
+                
+                if (!isNaN(quantity) && quantity > 0) {
+                    materials.push({ material, quantity, unit: unitSelect.value });
+                }
+            });
+            
+            if (materials.length === 0) {
+                alert('Add at least one material with a valid quantity');
+                return;
+            }
+            
+            const response = await fetch('http://localhost:8000/estimate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ materials })
+            });
+            
+            const data = await response.json();
+            
+            document.getElementById('results').innerHTML = `
+                <div class="bg-white rounded-lg shadow p-6">
+                    <h2 class="text-xl font-semibold mb-4">Results</h2>
+                    <div class="grid grid-cols-2 gap-4 mb-6">
+                        <div class="bg-gray-100 p-4 rounded">
+                            <div class="text-sm text-gray-600">Total Emissions</div>
+                            <div class="text-2xl font-bold">${data.total_tons_co2e} tons CO₂e</div>
+                        </div>
+                        <div class="bg-gray-100 p-4 rounded">
+                            <div class="text-sm text-gray-600">Or</div>
+                            <div class="text-xl font-bold">${data.total_kg_co2e.toLocaleString()} kg CO₂e</div>
+                        </div>
+                    </div>
+                    <h3 class="font-semibold mb-2">Breakdown by material</h3>
+                    <div class="space-y-2">
+                        ${data.breakdown.map(b => `
+                            <div class="flex justify-between border-b py-2">
+                                <span class="capitalize">${b.material}</span>
+                                <span>${b.kg_co2e.toLocaleString()} kg CO₂e</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                    <div class="mt-4 text-xs text-gray-500">
+                        Using emissions factors from public databases (EPA/Defra simplified)
+                    </div>
+                </div>
+            `;
+            document.getElementById('results').classList.remove('hidden');
+        }
+        
+        // Add 2 example rows
+        addMaterial('steel', '1000');
+        addMaterial('aluminum', '500');
+    </script>
+</body>
+</html>
